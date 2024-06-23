@@ -15,7 +15,7 @@ fi
 
 filepath=$(dirname ${writefile})
 filename=$(basename ${writefile})
-mkdir ${filepath}
+mkdir -m 777 ${filepath}
 if [ -d ${filepath} ]
 then
 	cd ${filepath}
