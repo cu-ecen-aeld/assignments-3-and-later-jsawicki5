@@ -48,13 +48,12 @@ then
 		exit 1
 	fi
 fi
-#echo "Removing the old writer utility and compiling as a native application"
-#make clean
-#make
+
+TOOLCHAIN_PATH=~/install-lnx/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu
 
 for i in $( seq 1 $NUMFILES)
 do
-	./writer.sh "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	qemu-aarch64 -L $TOOLCHAIN_PATH/aarch64-none-linux-gnu/libc ./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
 OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")

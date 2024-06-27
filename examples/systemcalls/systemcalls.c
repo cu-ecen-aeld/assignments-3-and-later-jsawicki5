@@ -1,3 +1,11 @@
+#define _XOPEN_SOURCE
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
 #include "systemcalls.h"
 
 /**
@@ -9,15 +17,14 @@
 */
 bool do_system(const char *cmd)
 {
-
 /*
  * TODO  add your code here
  *  Call the system() function with the command set in the cmd
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
-*/
+ */
 
-    return true;
+    return ((cmd != NULL) && (system(cmd) == 0) ? true:false);
 }
 
 /**
@@ -40,6 +47,7 @@ bool do_exec(int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+    pid_t pid;
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
@@ -48,6 +56,8 @@ bool do_exec(int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
+
+    va_end(args);
 
 /*
  * TODO:
@@ -58,8 +68,38 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
-    va_end(args);
+    pid=fork();
+    switch(pid)
+    {
+        case -1:
+        {
+            perror("fork");
+            return false;
+        }
+        case 0:
+        {
+            /* Child code */
+            execv(command[0],command);
+            perror("execv");
+            exit(EXIT_FAILURE);
+            break;
+        }
+        default:
+        {
+            /* Parent code, Continue*/
+            int status;
+            if(waitpid(pid, &status, 0) == -1)
+            {
+                perror("waitpid");
+                return false;
+            }
+            else
+            {
+                /* Child process completed */
+            }
+            return (WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        }
+    }
 
     return true;
 }
@@ -75,6 +115,8 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+    pid_t pid;
+
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
@@ -84,16 +126,76 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // and may be removed
     command[count] = command[count];
 
+    va_end(args);
+
 
 /*
- * TODO
  *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
  *   redirect standard out to a file specified by outputfile.
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    if (outputfile != NULL)
+    {
+    	int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    	if (fd < 0) 
+    	{ 
+    		perror("open");
+    		return false;
+    	}
+    	else
+    	{
+    		/* Continue */
+    	}
 
-    va_end(args);
+    	pid=fork();
+
+    	switch(pid) {
+    		case -1: 
+    		{
+    			perror("fork"); 
+    			/* Parent code*/
+                close(fd);
+                return false;
+    		}
+    		case 0:
+            {
+                if (dup2(fd, 1) < 0) 
+                { 
+                    perror("dup2"); 
+                    close(fd);
+                    return false; 
+                }
+                else
+                {
+                    close(fd);
+                    execv(command[0],command);
+                    perror("execv");
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            }
+            default:
+            {
+                /* Parent code*/
+                close(fd);
+                int status;
+                if(waitpid(pid, &status, 0) == -1)
+                {
+                    perror("waitpid");
+                    return false;
+                }
+                else
+                {
+                    return (WIFEXITED(status) && WEXITSTATUS(status) == 0);
+                }
+            }    	
+	}
+   }
+   else
+   {
+   	    return false;
+   }
 
     return true;
 }
