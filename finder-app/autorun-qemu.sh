@@ -1,4 +1,5 @@
 #!/bin/sh
+echo "init process starting i.e. autorun-qemu.sh"
 cd $(dirname $0)
 echo "Running test script"
 ./finder-test.sh
