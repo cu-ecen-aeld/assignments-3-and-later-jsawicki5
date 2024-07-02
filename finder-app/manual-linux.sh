@@ -89,7 +89,7 @@ libraries=$(${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library" | awk
 echo "shared libraries: ${libraries}"
 
 # TODO: Add library dependencies to rootfs
-path_prefix=$(find /lib /lib64 /usr/lib /usr/lib64 /home -name "gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu" 2>/dev/null)
+path_prefix=$(sudo find /tmp /sbin /dev /bin /lib /lib64 /usr /home -name  "gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu" 2>/dev/null)
 echo "got prefix: ${path_prefix}"
 if [ -n "$prog_interpreter" ]
 then
