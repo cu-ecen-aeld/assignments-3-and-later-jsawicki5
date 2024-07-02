@@ -90,6 +90,7 @@ libraries=$(${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library" | awk
 echo "shared libraries: ${libraries}"
 
 # TODO: Add library dependencies to rootfs
+echo "${SCRIPT_DIR}"
 cd "${SCRIPT_DIR}"
 cd "../"
 if [ -n "$prog_interpreter" ]
