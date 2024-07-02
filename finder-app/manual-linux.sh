@@ -89,20 +89,21 @@ libraries=$(${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library" | awk
 echo "shared libraries: ${libraries}"
 
 # TODO: Add library dependencies to rootfs
+path_prefix=$(find /lib /lib64 /usr/lib /usr/lib64 /home -name "gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu" 2>/dev/null)
+echo "got prefix: ${path_prefix}"
 if [ -n "$prog_interpreter" ]
 then
-	interpretor_path=$(find /home -name "$(basename $prog_interpreter)" 2>/dev/null)
-	echo "Copying dependency ${interpretor_path} to lib"
-	cp ${interpretor_path} ${OUTDIR}/rootfs/lib
+	echo "Copying program interpreter to lib"
+	prog_interpreter_basename=$(basename ${prog_interpreter})
+	cp ${path_prefix}/aarch64-none-linux-gnu/libc/lib/${prog_interpreter_basename} ${OUTDIR}/rootfs/lib
 fi
 
 if [ -n "$libraries" ]
 then
 	for lib in $libraries
 	do
-		lib_path=$(find /home -name "$lib" 2>/dev/null)
-		echo "Copying shared lib ${lib_path} to lib64"
-		cp ${lib_path} ${OUTDIR}/rootfs/lib64
+		echo "Copying shared lib to lib64"
+		cp ${path_prefix}/aarch64-none-linux-gnu/libc/lib64/${lib} ${OUTDIR}/rootfs/lib64
 	done
 fi
 	
