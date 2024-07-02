@@ -119,7 +119,7 @@ sudo mknod -m 666 dev/ttyAMA0 c 204 64
 
 # TODO: Clean and build the writer utility
 echo "Cleaning and building the writer utility"
-cd ~/Documents/assignments/assignment-1-jsawicki5/finder-app
+cd "${SCRIPT_DIR}"
 make CROSS_COMPILE=aarch64-none-linux-gnu- clean
 make CROSS_COMPILE=aarch64-none-linux-gnu- all
 
