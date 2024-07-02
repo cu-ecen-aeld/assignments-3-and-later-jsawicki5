@@ -5,6 +5,7 @@
 set -e
 set -u
 
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 OUTDIR=/tmp/aeld
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.1.10
@@ -89,13 +90,13 @@ libraries=$(${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library" | awk
 echo "shared libraries: ${libraries}"
 
 # TODO: Add library dependencies to rootfs
-path_prefix=$(sudo find /tmp /sbin /dev /bin /lib /lib64 /usr /home -name  "gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu" 2>/dev/null)
-echo "got prefix: ${path_prefix}"
+cd "${SCRIPT_DIR}"
+cd "../"
 if [ -n "$prog_interpreter" ]
 then
-	echo "Copying program interpreter to lib"
-	prog_interpreter_basename=$(basename ${prog_interpreter})
-	cp ${path_prefix}/aarch64-none-linux-gnu/libc/lib/${prog_interpreter_basename} ${OUTDIR}/rootfs/lib
+	prog_path=$(find . -name "$(basename "$prog_interpreter")" 2>/dev/null)
+	echo "Copying program interpreter ${prog_path} to lib"
+	cp ${prog_path} ${OUTDIR}/rootfs/lib
 fi
 
 if [ -n "$libraries" ]
@@ -103,10 +104,12 @@ then
 	for lib in $libraries
 	do
 		echo "Copying shared lib to lib64"
-		cp ${path_prefix}/aarch64-none-linux-gnu/libc/lib64/${lib} ${OUTDIR}/rootfs/lib64
+		lib_path=$(find . -name "$lib" 2>/dev/null)
+		cp ${lib_path} ${OUTDIR}/rootfs/lib64
 	done
 fi
 	
+cd "${OUTDIR}/rootfs"
 # TODO: Make device nodes
 echo "Creating device nodes"
 sudo mknod -m 666 dev/null c 1 3
