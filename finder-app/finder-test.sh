@@ -8,7 +8,9 @@ set -u
 NUMFILES=10
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
-username=$(cat conf/username.txt)
+CONF_DIR=/etc/finder-app/conf
+username=$(cat $CONF_DIR/username.txt)
+TOOLCHAIN_PATH=${TOOLCHAIN_PATH:-~/install-lnx/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu}
 
 if [ $# -lt 3 ]
 then
@@ -32,7 +34,7 @@ echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
 rm -rf "${WRITEDIR}"
 
 # create $WRITEDIR if not assignment1
-assignment=`cat /conf/assignment.txt`
+assignment=`cat $CONF_DIR/assignment.txt`
 
 if [ $assignment != 'assignment1' ]
 then
@@ -49,14 +51,12 @@ then
 	fi
 fi
 
-TOOLCHAIN_PATH=~/install-lnx/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu
-
 for i in $( seq 1 $NUMFILES)
 do
-	qemu-aarch64 -L $TOOLCHAIN_PATH/aarch64-none-linux-gnu/libc ./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	qemu-aarch64 -L $TOOLCHAIN_PATH/aarch64-none-linux-gnu/libc writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR")
 
 # remove temporary directories
 rm -rf /tmp/aeld-data
@@ -64,9 +64,9 @@ rm -rf /tmp/aeld-data
 set +e
 echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
 if [ $? -eq 0 ]; then
-	echo "success"
+	echo "success" > /tmp/assignment4-result.txt
 	exit 0
 else
-	echo "failed: expected  ${MATCHSTR} in ${OUTPUTSTRING} but instead found"
+	echo "failed: expected  ${MATCHSTR} in ${OUTPUTSTRING} but instead found" > /tmp/assignment4-result.txt
 	exit 1
 fi
