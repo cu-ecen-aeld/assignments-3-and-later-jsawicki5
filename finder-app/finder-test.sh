@@ -10,7 +10,7 @@ WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
 CONF_DIR=/etc/finder-app/conf
 username=$(cat $CONF_DIR/username.txt)
-TOOLCHAIN_PATH=${TOOLCHAIN_PATH:-~/install-lnx/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu}
+#TOOLCHAIN_PATH=${TOOLCHAIN_PATH:-~/install-lnx/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu}
 
 if [ $# -lt 3 ]
 then
@@ -53,8 +53,8 @@ fi
 
 for i in $( seq 1 $NUMFILES)
 do
-	qemu-aarch64 -L $TOOLCHAIN_PATH/aarch64-none-linux-gnu/libc writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
-	#writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	#qemu-aarch64 -L $TOOLCHAIN_PATH/aarch64-none-linux-gnu/libc writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
 OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR")
