@@ -1,16 +1,17 @@
 CC=gcc
 CFLAGS= -g -Wall -Werror
+LDFLAGS= -lrt -lpthread
 
 ifdef CROSS_COMPILE
-	CC = ${CROSS_COMPILE}gcc	
+	CC = ${CROSS_COMPILE}gcc
 endif
 
 all: aesdsocket
 
-writer: aesdsocket.o
-		$(CC) $(CFLAGS) aesdsocket.o -o aesdsocket
+aesdsocket: aesdsocket.o
+		$(CC) $(CFLAGS) aesdsocket.o -o aesdsocket $(LDFLAGS)
 
-writer.o:writer.c
+aesdsocket.o:aesdsocket.c
 		$(CC) $(CFLAGS) -c aesdsocket.c -o aesdsocket.o
 
 clean:
