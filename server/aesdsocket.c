@@ -298,14 +298,13 @@ static void * _aesdsocket_thread_fn(void* thread_param)
         inet_ntop(thread_data->aesd_data.address.ss_family, addr, ipstr, sizeof(ipstr));
         syslog(LOG_INFO, "Accepted connection from %s", ipstr);
         memset(rd_buff, 0, sizeof(rd_buff));
-        pthread_mutex_lock(thread_data->aesd_data.t_mutex);
+        
         do
         {
             if((rd_len = recv(thread_data->aesd_data.recv_s_fd, (void *)&rd_buff[0], 1, 0)) == -1)
             {
                 if((errno == EINTR) && (thread_data->aesd_data.sig_rec != false))
                 {
-                    pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
                     syslog(LOG_INFO, "Caught signal, exiting");
                     shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
                     close(thread_data->aesd_data.recv_s_fd);
@@ -314,7 +313,6 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 }
                 else
                 {
-                    pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
                     syslog(LOG_ERR, "recv() error: %d", errno);
                     shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
                     close(thread_data->aesd_data.recv_s_fd);
@@ -327,7 +325,14 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 break;
             }
             else
-            {               
+            {       
+				if (pthread_mutex_lock(thread_data->aesd_data.t_mutex) != 0) 
+				{
+					syslog(LOG_ERR, "pthread_mutex_lock() error");
+					break;
+				} 
+				  
+				        
                 if((written = write(thread_data->aesd_data.fd, &rd_buff[0], 1)) != 1)
                 {
                     if (written == -1) {
@@ -383,10 +388,17 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 {
                     /* continue */
                     rd_buff[0] = 0;
-                }               
+                } 
+                
+                if (pthread_mutex_unlock(thread_data->aesd_data.t_mutex) != 0) 
+                {
+					syslog(LOG_ERR, "pthread_mutex_unlock() error");
+					break;
+				}              
             } 
             
         }while(rd_len != 0);
+        
         pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
 
         shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
