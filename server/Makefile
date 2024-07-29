@@ -1,9 +1,9 @@
-CC=gcc
-CFLAGS= -g -Wall -Werror
-LDFLAGS= -lrt -lpthread
+CC ?= gcc
+CFLAGS ?= -g -Wall -Werror
+LDFLAGS ?= -lrt -lpthread
 
 ifdef CROSS_COMPILE
-	CC = ${CROSS_COMPILE}gcc
+	CC ?= ${CROSS_COMPILE}gcc
 endif
 
 all: aesdsocket
