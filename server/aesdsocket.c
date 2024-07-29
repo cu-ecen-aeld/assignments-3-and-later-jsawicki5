@@ -341,13 +341,12 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 }
                 else
                 {
+					fsync(thread_data->aesd_data.fd);  // Ensure data is written to disk
                     /* Continue */
                 }
 
                 if(rd_buff[0] == '\n')
                 {
-                    fsync(thread_data->aesd_data.fd);  // Ensure data is written to disk
-
                     memset(rd_buff, 0, sizeof(rd_buff));
                     
                     lseek(thread_data->aesd_data.fd, 0, SEEK_SET); // Go to the start of the file
