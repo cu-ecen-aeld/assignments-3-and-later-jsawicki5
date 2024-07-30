@@ -275,7 +275,7 @@ static void _aesdsocket_update_timestamp_thread(union sigval sig_val)
 static void * _aesdsocket_thread_fn(void* thread_param)
 {
     size_t rd_len = 0;
-    static char rd_buff[2048];
+    char rd_buff[1024];
     ssize_t sent_bytes = 0, written, total_read = 0;
     aesdsocket_list_data_t * thread_data = (aesdsocket_list_data_t *)thread_param;
     void *addr;
@@ -296,12 +296,12 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 
         // convert the IP to a string and print it:
         inet_ntop(thread_data->aesd_data.address.ss_family, addr, ipstr, sizeof(ipstr));
-        syslog(LOG_INFO, "Accepted connection from %s", ipstr);
+        //syslog(LOG_INFO, "Accepted connection from %s", ipstr);
         memset(rd_buff, 0, sizeof(rd_buff));
         
         do
         {
-            if((rd_len = recv(thread_data->aesd_data.recv_s_fd, (void *)rd_buff, sizeof(rd_buff), 0)) == -1)
+            if((rd_len = recv(thread_data->aesd_data.recv_s_fd, (void *)rd_buff, (sizeof(rd_buff) -1), 0)) == -1)
             {
                 if((errno == EINTR) && (thread_data->aesd_data.sig_rec != false))
                 {
@@ -325,7 +325,9 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 break;
             }
             else
-            {       
+            {      
+				syslog(LOG_INFO, "From: %d, Received: %s", thread_data->aesd_data.recv_s_fd, rd_buff);
+				 
 				if (pthread_mutex_lock(thread_data->aesd_data.t_mutex) != 0) 
 				{
 					syslog(LOG_ERR, "pthread_mutex_lock() error");
@@ -346,20 +348,23 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 }
                 else
                 {
-					fsync(thread_data->aesd_data.fd);  // Ensure data is written to disk
                     /* Continue */
+                    syslog(LOG_INFO, "From: %d, wrote: %s", thread_data->aesd_data.recv_s_fd, rd_buff);
                 }
 
                 if(rd_buff[strlen(rd_buff) - 1u] == '\n')
                 {
+                    fsync(thread_data->aesd_data.fd);  // Ensure data is written to disk
                     memset(rd_buff, 0, sizeof(rd_buff));
                     
+                    syslog(LOG_INFO, "Output Stream...");
                     lseek(thread_data->aesd_data.fd, 0, SEEK_SET); // Go to the start of the file
                     while ((total_read = read(thread_data->aesd_data.fd, rd_buff, sizeof(rd_buff))) > 0) 
                     {
                         sent_bytes = 0;
                         while (sent_bytes < total_read) 
                         {
+                            syslog(LOG_INFO, "%s", &rd_buff[sent_bytes]);
                             written = send(thread_data->aesd_data.recv_s_fd, rd_buff + sent_bytes, total_read - sent_bytes, 0);
                             if (written == -1) 
                             {
@@ -404,7 +409,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
         shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
         close(thread_data->aesd_data.recv_s_fd);
 
-        syslog(LOG_INFO, "Closed connection from %s", ipstr);
+        //syslog(LOG_INFO, "Closed connection from %s", ipstr);
    }
     
     thread_data->thread_complete = true;
@@ -543,7 +548,7 @@ static int _aesdsocket_Run(void)
 
                     if(pthread_create(&thread_list_entry->data.thread, NULL, _aesdsocket_thread_fn, &thread_list_entry->data) != 0)
                     {
-                        printf("pthread_create failed");
+                        syslog(LOG_INFO, "pthread_create failed");
                         free(thread_list_entry);
 
                         /* Close Thread List */
@@ -557,13 +562,14 @@ static int _aesdsocket_Run(void)
                         _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd, aesdsocketData.fd);
                         if (timer_delete(timerid) == -1) 
                     	{
-        			perror("timer_delete");
-    		     	}
+        			        perror("timer_delete");
+    		     	    }
     		     
                         return -1;
                     }
                     else
                     {
+                        syslog(LOG_INFO, "Thread created: %lu, s_fd: %d", (unsigned long)thread_list_entry->data.thread, thread_list_entry->data.aesd_data.recv_s_fd);
                         SLIST_INSERT_HEAD(&head, thread_list_entry, entries);
                         /* Continue */
                     }
@@ -594,6 +600,7 @@ static int _aesdsocket_Run(void)
                 temp_entry = SLIST_NEXT(thread_list_entry, entries);
                 if(thread_list_entry->data.thread_complete != false)
                 {
+                    syslog(LOG_INFO, "Thread completed: %lu, s_fd: %d", (unsigned long)thread_list_entry->data.thread, thread_list_entry->data.aesd_data.recv_s_fd);
                     (void)pthread_join(thread_list_entry->data.thread, NULL);
                     SLIST_REMOVE(&head, thread_list_entry, aesdsoc_linked_list_s, entries);
 
