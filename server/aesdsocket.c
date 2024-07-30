@@ -301,7 +301,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
         
         do
         {
-            if((rd_len = recv(thread_data->aesd_data.recv_s_fd, (void *)&rd_buff[0], 1, 0)) == -1)
+            if((rd_len = recv(thread_data->aesd_data.recv_s_fd, (void *)rd_buff, sizeof(rd_buff), 0)) == -1)
             {
                 if((errno == EINTR) && (thread_data->aesd_data.sig_rec != false))
                 {
@@ -333,7 +333,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 				} 
 				  
 				        
-                if((written = write(thread_data->aesd_data.fd, &rd_buff[0], 1)) != 1)
+                if((written = write(thread_data->aesd_data.fd, rd_buff, rd_len)) != rd_len)
                 {
                     if (written == -1) {
                         pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
@@ -350,7 +350,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                     /* Continue */
                 }
 
-                if(rd_buff[0] == '\n')
+                if(rd_buff[strlen(rd_buff) - 1u] == '\n')
                 {
                     memset(rd_buff, 0, sizeof(rd_buff));
                     
@@ -387,7 +387,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 else
                 {
                     /* continue */
-                    rd_buff[0] = 0;
+                    memset(rd_buff, 0, sizeof(rd_buff));
                 } 
                 
                 if (pthread_mutex_unlock(thread_data->aesd_data.t_mutex) != 0) 
