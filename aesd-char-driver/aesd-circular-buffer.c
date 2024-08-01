@@ -16,6 +16,26 @@
 
 #include "aesd-circular-buffer.h"
 
+
+static void advance_pointer(struct aesd_circular_buffer *buffer)
+{
+    if (buffer->full)
+    {
+        buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
+
+    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    buffer->full = (buffer->in_offs == buffer->out_offs);
+}
+/*---------------------------------------------------------------------------*/
+
+static void retreat_pointer(struct aesd_circular_buffer *buffer)
+{
+    buffer->full = false;
+    buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+}
+/*---------------------------------------------------------------------------*/
+
 /**
  * @param buffer the buffer to search for corresponding offset.  Any necessary locking must be performed by caller.
  * @param char_offset the position to search for in the buffer list, describing the zero referenced
@@ -29,9 +49,34 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn )
 {
-    /**
-    * TODO: implement per description
-    */
+    struct aesd_circular_buffer l_buffer;
+    unsigned int index_cnt = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+    if(buffer != NULL && entry_offset_byte_rtn != NULL)
+    {
+        memset(&l_buffer, 0, sizeof(struct aesd_circular_buffer));
+        memcpy(&l_buffer, buffer, sizeof(struct aesd_circular_buffer));
+
+        do
+        {
+            if(l_buffer.entry[l_buffer.out_offs].size == 0)
+            {
+                return NULL;
+            }
+            else if(l_buffer.entry[l_buffer.out_offs].size <= char_offset )
+            {
+                char_offset -= l_buffer.entry[l_buffer.out_offs].size;
+                retreat_pointer(&l_buffer);
+            }
+            else
+            {
+                *entry_offset_byte_rtn = char_offset;
+                return &buffer->entry[l_buffer.out_offs];
+            }
+        }while (--index_cnt != 0);
+        
+    }
+   
     return NULL;
 }
 
@@ -44,9 +89,17 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 */
 void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    /**
-    * TODO: implement per description
-    */
+    if(buffer != NULL && add_entry != NULL)
+    {
+            memcpy(&buffer->entry[buffer->in_offs], add_entry, sizeof(struct aesd_buffer_entry));
+            advance_pointer(buffer);
+    }
+    else
+    {
+        /* Invalid*/
+    }
+
+    return;
 }
 
 /**
