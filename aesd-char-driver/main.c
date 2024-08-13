@@ -67,8 +67,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
             k_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&l_devp->buffer, (size_t)*f_pos, &buf_pos);  
             if ((k_entry != NULL) && (k_entry->buffptr != NULL))
             {
-				PDEBUG("entry size: %zu, buffer pos: %zu", k_entry->size, buf_pos);
-                read_len = ((k_entry->size - buf_pos) < count) ? (k_entry->size - buf_pos) : count;
+                PDEBUG("entry size: %zu, buffer pos: %zu", k_entry->size, buf_pos);
+                read_len = ((k_entry->size - buf_pos) < count) ? (k_entry->size - buf_pos) : count;                
                 read_len -= copy_to_user(buf, &k_entry->buffptr[buf_pos], read_len);
                 *f_pos += read_len;
                 retval = (ssize_t)read_len;
@@ -113,8 +113,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             else
             {
                 k_entry.size = count;  
-                PDEBUG("entry size: %zu", k_entry.size);
                 k_entry.buffptr = k_buf; 
+                PDEBUG("entry size: %zu", k_entry.size);
                 l_devp = (struct aesd_dev *)filp->private_data;
                 if(l_devp != NULL)
                 {
