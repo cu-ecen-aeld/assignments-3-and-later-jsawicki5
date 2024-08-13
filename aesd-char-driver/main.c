@@ -120,8 +120,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         {
             return -ERESTARTSYS;
         }
-		
-		k_buf_size += count;
+
+        k_buf_size += count;
         k_buf = krealloc(k_buf, (k_buf_size*sizeof(char)), GFP_KERNEL);
 
         if(k_buf != NULL) 
@@ -129,31 +129,38 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             PDEBUG("Allocated entry, %lu", (uintptr_t)k_buf);
             if (buf != NULL)
             {
-                if(copy_from_user(k_buf, buf, count) != 0)
+                if(copy_from_user(&k_buf[k_buf_size - count], buf, count) != 0)
                 {
                     PDEBUG("copy_from_user failed");
                     goto cleanup;
                 }
                 else
                 {
-                    k_entry.size = k_buf_size;  
-                    k_entry.buffptr = k_buf; 
-                    PDEBUG("entry size: %zu", k_entry.size);
-                    PDEBUG("Adding buffer %lu to circular buffer", (uintptr_t)k_buf);
-                    old_entry = aesd_circular_buffer_add_entry(&l_devp->buffer, &k_entry);
-                    k_buf = NULL;
-                    k_buf_size = 0;
-                    mutex_unlock(&l_devp->lock);
-
-                    if(old_entry != NULL)
+                    if(k_buf[k_buf_size - 1] == '\n')
                     {
-                        PDEBUG("Freeing entry, %lu", (uintptr_t)old_entry);
-                        kfree(old_entry);
+                        k_entry.size = k_buf_size;  
+                        k_entry.buffptr = k_buf; 
+                        PDEBUG("entry size: %zu", k_entry.size);
+                        PDEBUG("Adding buffer %lu to circular buffer", (uintptr_t)k_buf);
+                        old_entry = aesd_circular_buffer_add_entry(&l_devp->buffer, &k_entry);
+                        k_buf = NULL;
+                        k_buf_size = 0;
+                        mutex_unlock(&l_devp->lock);
+
+                        if(old_entry != NULL)
+                        {
+                            PDEBUG("Freeing entry, %lu", (uintptr_t)old_entry);
+                            kfree(old_entry);
+                        }
+                        (void)k_buf;
+                        (void)k_entry;
+                        retval = (ssize_t)k_entry.size;
                     }
-                    (void)k_buf;
-                    (void)k_entry;
-                    retval = (ssize_t)k_entry.size;
-                    
+                    else
+                    {
+                        mutex_unlock(&l_devp->lock);
+                        retval = (ssize_t)count;
+                    }                    
                 }
             }
 
