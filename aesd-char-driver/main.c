@@ -21,26 +21,28 @@
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
-MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
+MODULE_AUTHOR("Jacob Sawicki"); 
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
 
 int aesd_open(struct inode *inode, struct file *filp)
 {
+    struct aesd_dev *dev = NULL;
+
     PDEBUG("open");
-    /**
-     * TODO: handle open
-     */
+    if((inode != NULL) && (filp != NULL))
+    {
+        dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
+        filp->private_data = dev;
+    }
     return 0;
 }
 
 int aesd_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("release");
-    /**
-     * TODO: handle release
-     */
+    
     return 0;
 }
 
@@ -58,11 +60,40 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    struct aesd_buffer_entry k_entry;
+    char *old_entry = NULL;
+
     ssize_t retval = -ENOMEM;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle write
-     */
+
+    k_entry.buffptr = kmalloc((count * sizeof(char)), GFP_KERNEL);
+    if(k_entry.buffptr != NULL) 
+    {
+        if ((buf != NULL) && (filp != NULL))
+        {
+            if(copy_from_user(k_entry.buffptr, buf, count) != 0)
+            {
+                goto cleanup;
+            }
+            else
+            {
+                k_entry.size = count;   
+                old_entry = aesd_circular_buffer_add_entry((struct aesd_circular_buffer *)&filp->private_data->buffer, &k_entry);   
+                if(old_entry != NULL)
+                {
+                    free(old_entry);
+                }
+                (void)k_entry;
+                retval = count;
+            }
+        }
+    }
+
+    cleanup:
+    {
+        kfree(k_entry.buffptr);
+    }
+    
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -105,6 +136,7 @@ int aesd_init_module(void)
     /**
      * TODO: initialize the AESD specific portion of the device
      */
+    aesd_circular_buffer_init(&aesd_device.buffer)
 
     result = aesd_setup_cdev(&aesd_device);
 
