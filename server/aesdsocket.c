@@ -21,6 +21,14 @@
 
 #include "time_functions_shared.h"
 
+#define USE_AESD_CHAR_DEVICE
+
+#ifdef USE_AESD_CHAR_DEVICE
+#define OUTPUT_FILE "/dev/aesdchar"
+#else
+#define OUTPUT_FILE "/var/tmp/aesdsocketdata"
+#endif
+
 typedef struct {
     bool sig_rec;
     int s_fd;
@@ -71,7 +79,7 @@ static void _aesdsocket_handler (int signum)
     return;
 }
 
-static void _aesdsocket_shutdownHelper(int recv_s_fd, int fd)
+static void _aesdsocket_shutdownHelper(int recv_s_fd)
 {
     if(recv_s_fd > 0)
     {
@@ -93,21 +101,12 @@ static void _aesdsocket_shutdownHelper(int recv_s_fd, int fd)
         /*continue*/
     }
 
-    if(fd > 0)
-    {
-        close(fd);
-        unlink("/var/tmp/aesdsocketdata");
-    }
-    else
-    {
-        /* Continue */
-    }
-
     pthread_mutex_destroy(aesdsocketData.t_mutex);
 
     return;
 }
 
+#ifndef USE_AESD_CHAR_DEVICE
 static bool setup_timer( int clock_id,
                          timer_t timerid)
 {
@@ -134,7 +133,7 @@ static bool setup_timer( int clock_id,
     (void)start_time;
     return success;
 }
-
+#endif
 
 static int _aesdsocket_Init(void)
 {
@@ -209,6 +208,7 @@ static int _aesdsocket_Init(void)
     return 0;
 }
 
+#ifndef USE_AESD_CHAR_DEVICE
 static void _aesdsocket_update_timestamp_thread(union sigval sig_val)
 {
     aesdsocket_list_data_t * thread_data = (aesdsocket_list_data_t *) sig_val.sival_ptr;
@@ -271,6 +271,7 @@ static void _aesdsocket_update_timestamp_thread(union sigval sig_val)
 
     return;
 }
+#endif
 
 static void * _aesdsocket_thread_fn(void* thread_param)
 {
@@ -283,6 +284,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 
    if(thread_param !=NULL)
    {
+    
         if (thread_data->aesd_data.address.ss_family == AF_INET) 
         { // IPv4
             struct sockaddr_in *ipv4 = (struct sockaddr_in *)&thread_data->aesd_data.address;
@@ -333,7 +335,21 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 					syslog(LOG_ERR, "pthread_mutex_lock() error");
 					break;
 				} 
-				  
+
+                thread_data->aesd_data.fd = open(OUTPUT_FILE, O_RDWR|O_CREAT|O_APPEND, 0766);
+                if(thread_data->aesd_data.fd == -1)
+                {
+                    pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
+                    syslog(LOG_ERR, "open() error: %d", errno);
+                    shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+                    close(thread_data->aesd_data.recv_s_fd);
+                    thread_data->thread_complete = true;
+                    return thread_data;
+                }
+                else
+                {
+                    /* continue*/
+                }  
 				        
                 if((written = write(thread_data->aesd_data.fd, rd_buff, rd_len)) != rd_len)
                 {
@@ -342,6 +358,10 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                         syslog(LOG_ERR, "write() error: %d", errno);
                         shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
                         close(thread_data->aesd_data.recv_s_fd);
+                        close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+                        unlink(OUTPUT_FILE);
+#endif
                         thread_data->thread_complete = true;
                         return thread_data;
                     }
@@ -354,11 +374,15 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 
                 if(rd_buff[strlen(rd_buff) - 1u] == '\n')
                 {
+#ifndef USE_AESD_CHAR_DEVICE
                     fsync(thread_data->aesd_data.fd);  // Ensure data is written to disk
+#endif
                     memset(rd_buff, 0, sizeof(rd_buff));
                     
                     syslog(LOG_INFO, "Output Stream...");
+#ifndef USE_AESD_CHAR_DEVICE
                     lseek(thread_data->aesd_data.fd, 0, SEEK_SET); // Go to the start of the file
+#endif
                     while ((total_read = read(thread_data->aesd_data.fd, rd_buff, sizeof(rd_buff))) > 0) 
                     {
                         sent_bytes = 0;
@@ -372,6 +396,10 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                                 pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
                                 shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
                                 close(thread_data->aesd_data.recv_s_fd);
+                                close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+                        unlink(OUTPUT_FILE);
+#endif
                                 thread_data->thread_complete = true;
                                 return thread_data;
                             }
@@ -383,6 +411,10 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                         pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
                         shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
                         close(thread_data->aesd_data.recv_s_fd);
+                        close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+                        unlink(OUTPUT_FILE);
+#endif
                         thread_data->thread_complete = true;
                         return thread_data;
                     }
@@ -394,7 +426,11 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                     /* continue */
                     memset(rd_buff, 0, sizeof(rd_buff));
                 } 
-                
+
+                close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+                unlink(OUTPUT_FILE);
+#endif
                 if (pthread_mutex_unlock(thread_data->aesd_data.t_mutex) != 0) 
                 {
 					syslog(LOG_ERR, "pthread_mutex_unlock() error");
@@ -421,8 +457,6 @@ static int _aesdsocket_Run(void)
     socklen_t addrlen;
     pthread_mutex_t t_mutex;
     aesdsoc_linked_list_t * thread_list_entry = NULL, *temp_entry = NULL;
-    struct sigevent sev;
-    timer_t timerid;
 
     pthread_mutex_init(&t_mutex, NULL);
     aesdsocketData.t_mutex = &t_mutex;
@@ -437,21 +471,10 @@ static int _aesdsocket_Run(void)
     }
     else
     {
-        /* Open the file and create it if it's not already created */
-        aesdsocketData.fd = open("/var/tmp/aesdsocketdata", O_RDWR|O_CREAT|O_APPEND, 0766);
-        if(aesdsocketData.fd == -1)
-        {
-            syslog(LOG_ERR, "file could not be created or opened");
-            shutdown(aesdsocketData.s_fd, SHUT_RDWR);
-            close(aesdsocketData.s_fd);
-            pthread_mutex_destroy(aesdsocketData.t_mutex);
-            return 1;
-        }
-        else
-        {
-            /* continue*/
-        }
+#ifndef USE_AESD_CHAR_DEVICE
 
+        struct sigevent sev;
+        timer_t timerid;
         /*Setup the timer thread */
         memset(&sev,0,sizeof(struct sigevent));
         /**
@@ -484,7 +507,7 @@ static int _aesdsocket_Run(void)
                 /* continue */
             }
         }
-        
+#endif
 
         /* Initialized the head of the linked list */
         SLIST_HEAD(slisthead, aesdsoc_linked_list_s) head;
@@ -508,12 +531,13 @@ static int _aesdsocket_Run(void)
                         free(thread_list_entry);
                     }
 
-                    _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd, aesdsocketData.fd);
+                    _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd);
+#ifndef USE_AESD_CHAR_DEVICE
                     if (timer_delete(timerid) == -1) 
                     {
-        		perror("timer_delete");
-    		     }
-
+                        perror("timer_delete");
+                    }
+#endif
                     return 0;
                 }
                 else
@@ -528,11 +552,13 @@ static int _aesdsocket_Run(void)
                         free(thread_list_entry);
                     }
 
-                    _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd, aesdsocketData.fd);
+                    _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd);
+#ifndef USE_AESD_CHAR_DEVICE
                     if (timer_delete(timerid) == -1) 
                     {
-        		perror("timer_delete");
-    		     }
+                        perror("timer_delete");
+                    }
+#endif
     		     
                     return -1;
                 }
@@ -559,11 +585,13 @@ static int _aesdsocket_Run(void)
                             free(thread_list_entry);
                         }
 
-                        _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd, aesdsocketData.fd);
+                        _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd);
+#ifndef USE_AESD_CHAR_DEVICE
                         if (timer_delete(timerid) == -1) 
                     	{
         			        perror("timer_delete");
     		     	    }
+#endif
     		     
                         return -1;
                     }
@@ -586,11 +614,13 @@ static int _aesdsocket_Run(void)
                         free(thread_list_entry);
                     }
 
-                    _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd, aesdsocketData.fd);
+                    _aesdsocket_shutdownHelper(aesdsocketData.recv_s_fd);
+#ifndef USE_AESD_CHAR_DEVICE
                     if (timer_delete(timerid) == -1) 
                     {
-        		perror("timer_delete");
-    		     }
+                        perror("timer_delete");
+                    }
+#endif
                     return -1;
                 }
             }
@@ -622,12 +652,13 @@ static int _aesdsocket_Run(void)
         	SLIST_REMOVE_HEAD(&head, entries);
         	free(thread_list_entry);
     	}
-    	
+#ifndef USE_AESD_CHAR_DEVICE
     	if (timer_delete(timerid) == -1) 
         {
         	perror("timer_delete");
         	return -1;
     	}
+#endif
     }
 
     shutdown(aesdsocketData.s_fd, SHUT_RDWR);
@@ -720,3 +751,4 @@ int main(int num_args, char * option[])
 
     return 0;
 }
+
