@@ -365,7 +365,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 				}
 				else
 				{
-					new_wr_buff = realloc(wr_buff, (d_len + 1));
+					new_wr_buff = realloc(wr_buff, (rd_len + 1));
 					memset (new_wr_buff, 0, (rd_len + 1));
 				}
                 
