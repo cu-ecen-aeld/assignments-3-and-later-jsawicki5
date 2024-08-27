@@ -358,7 +358,16 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                     syslog(LOG_INFO, "Opened fd: %d", thread_data->aesd_data.fd);
                 }
               
-                new_wr_buff = realloc(wr_buff, (rd_len + 1));
+				if(wr_buff != NULL)
+				{
+					new_wr_buff = realloc(wr_buff, (strlen(wr_buff) + rd_len + 1));
+					memset ((new_wr_buff + strlen(wr_buff)), 0, (rd_len + 1));
+				}
+				else
+				{
+					new_wr_buff = realloc(wr_buff, (d_len + 1));
+					memset (new_wr_buff, 0, (rd_len + 1));
+				}
                 
                 if(new_wr_buff != NULL)
                 {
