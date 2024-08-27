@@ -20,6 +20,7 @@
 #include <linux/fs.h> // file_operations
 #include <linux/string.h>
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -27,6 +28,9 @@ MODULE_AUTHOR("Jacob Sawicki");
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
+
+static long aesd_adjust_file_offset(struct file *filp, uint32_t cmd, uint32_t cmd_offset);
+
 
 int aesd_open(struct inode *inode, struct file *filp)
 {
@@ -78,7 +82,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 PDEBUG("entry size: %zu, buffer pos: %zu", k_entry->size, buf_pos);
                 read_len = ((k_entry->size - buf_pos) < count) ? (k_entry->size - buf_pos) : count;                
                 read_len -= copy_to_user(buf, &k_entry->buffptr[buf_pos], read_len);
-                *f_pos += read_len;
+                *f_pos = (filp->f_pos + read_len);
                 retval = (ssize_t)read_len;
             } 
             else
@@ -108,7 +112,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
 
-    if(filp != NULL)
+    if((filp != NULL) && (f_pos != NULL))
     {
         l_devp = (struct aesd_dev *)filp->private_data;
         if(l_devp == NULL)
@@ -136,6 +140,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 }
                 else
                 {
+                    *f_pos = (filp->f_pos + count);
                     if(k_buf[k_buf_size - 1] == '\n')
                     {
                         k_entry.size = k_buf_size;  
@@ -190,13 +195,108 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     return retval;
 }
 
+loff_t aesd_seek(struct file *filp, loff_t offset, int whence)
+{
+    loff_t new_pos = 0;
+    struct aesd_dev *l_devp = NULL;
+
+    if(filp != NULL)
+    {
+        l_devp = (struct aesd_dev *)filp->private_data;
+        if(l_devp == NULL)
+        {
+            return 0;
+        }
+
+        if(mutex_lock_interruptible(&l_devp->lock))
+        {
+            return 0;
+        }
+
+        new_pos = fixed_size_llseek(filp, offset, whence, aesd_circular_buffer_get_size((const struct aesd_circular_buffer *)&l_devp->buffer));
+        PDEBUG("seeking: offset %lld, new f_pos %lld", offset, new_pos);
+        filp->f_pos = new_pos;
+        mutex_unlock(&l_devp->lock);
+    }
+    else
+    {
+        /* null file pointer, return 0 */
+    }
+
+    return new_pos;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    struct aesd_seekto seekto;
+    long retval = EFAULT;
+
+    if(filp != NULL)
+    {
+        switch(cmd)
+        {
+            case AESDCHAR_IOCSEEKTO:
+			{
+				if(copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)) != 0)
+				{
+					retval = EFAULT;
+					PDEBUG("ioctl copy_from_user Error");
+				}
+				else
+				{
+					retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+					filp->f_pos = (loff_t)retval;
+				}
+				break;
+			}
+			default:
+			{
+				PDEBUG("ioctl unkown cmd Error");
+				retval = EFAULT;
+			}
+                
+        }
+    }
+
+    return retval;
+}
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek =   aesd_seek,
+    .unlocked_ioctl = aesd_ioctl
 };
+
+static long aesd_adjust_file_offset(struct file *filp, uint32_t cmd, uint32_t cmd_offset)
+{
+    struct aesd_dev *l_devp = NULL;
+    long retval = EFAULT;
+
+    if(filp != NULL)
+    {
+        l_devp = (struct aesd_dev *)filp->private_data;
+        if(l_devp == NULL)
+        {
+            return retval;
+        }
+
+        if(mutex_lock_interruptible(&l_devp->lock))
+        {
+            return retval;
+        }
+		
+        retval = aesd_circular_buffer_get_new_offset((const struct aesd_circular_buffer *)&l_devp->buffer, cmd, cmd_offset);
+        PDEBUG("ioctl new f_pos %ld", retval);
+
+        mutex_unlock(&l_devp->lock);  
+	}
+    
+    return retval;
+}
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
 {

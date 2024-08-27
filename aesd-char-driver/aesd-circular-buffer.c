@@ -36,6 +36,77 @@ static void retreat_pointer(struct aesd_circular_buffer *buffer)
 }
 /*---------------------------------------------------------------------------*/
 
+long aesd_circular_buffer_get_new_offset(const struct aesd_circular_buffer *buffer, uint32_t entry, uint32_t offset)
+{
+    long new_offset = 0;
+    struct aesd_circular_buffer l_buffer;
+    unsigned int num_entries = 0;
+
+    if(buffer != NULL)
+    {
+        memset(&l_buffer, 0, sizeof(struct aesd_circular_buffer));
+        memcpy(&l_buffer, buffer, sizeof(struct aesd_circular_buffer));
+
+        num_entries = ((!l_buffer.full) ? (l_buffer.in_offs - l_buffer.out_offs):AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED);
+
+        if(num_entries <= entry)
+        {
+            /* cmd out of range */
+            return -EINVAL;
+        }
+
+        do
+        {
+            if(entry == 0)
+            {   
+                if(l_buffer.entry[l_buffer.out_offs].size >= offset)
+                {
+                    new_offset += offset;
+                }
+                else
+                {
+                    return -EINVAL;
+                }
+            }
+            else
+            {
+				new_offset += l_buffer.entry[l_buffer.out_offs].size;
+                retreat_pointer(&l_buffer);
+            }
+        }while(entry-- != 0);
+    }
+
+    return new_offset;
+}
+
+unsigned long aesd_circular_buffer_get_size(const struct aesd_circular_buffer *buffer)
+{
+    unsigned long buff_size = 0;
+    struct aesd_circular_buffer l_buffer;
+
+    if(buffer != NULL)
+    {
+        if((!buffer->full) && (buffer->in_offs == buffer->out_offs))
+        {
+            /* buffer is empty */
+        }
+        else
+        {
+            memset(&l_buffer, 0, sizeof(struct aesd_circular_buffer));
+            memcpy(&l_buffer, buffer, sizeof(struct aesd_circular_buffer));
+
+            do
+            {
+                buff_size += l_buffer.entry[l_buffer.out_offs].size;
+                retreat_pointer(&l_buffer);
+            } while (l_buffer.out_offs != l_buffer.in_offs);
+            
+        }
+    }
+
+    return buff_size;
+}
+
 /**
  * @param buffer the buffer to search for corresponding offset.  Any necessary locking must be performed by caller.
  * @param char_offset the position to search for in the buffer list, describing the zero referenced

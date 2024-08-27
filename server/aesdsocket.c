@@ -18,8 +18,10 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/ioctl.h>
 
 #include "time_functions_shared.h"
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define USE_AESD_CHAR_DEVICE
 
@@ -277,6 +279,10 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 {
     size_t rd_len = 0;
     char rd_buff[1024];
+    char *wr_buff = NULL;
+    char *new_wr_buff = NULL;
+    char *cmd_str = NULL;
+    struct aesd_seekto seekto;
     ssize_t sent_bytes = 0, written, total_read = 0;
     aesdsocket_list_data_t * thread_data = (aesdsocket_list_data_t *)thread_param;
     void *addr;
@@ -298,7 +304,7 @@ static void * _aesdsocket_thread_fn(void* thread_param)
 
         // convert the IP to a string and print it:
         inet_ntop(thread_data->aesd_data.address.ss_family, addr, ipstr, sizeof(ipstr));
-        //syslog(LOG_INFO, "Accepted connection from %s", ipstr);
+        syslog(LOG_INFO, "Accepted connection from %s", ipstr);
         memset(rd_buff, 0, sizeof(rd_buff));
         
         do
@@ -349,83 +355,167 @@ static void * _aesdsocket_thread_fn(void* thread_param)
                 else
                 {
                     /* continue*/
-                }  
-				        
-                if((written = write(thread_data->aesd_data.fd, rd_buff, rd_len)) != rd_len)
+                    syslog(LOG_INFO, "Opened fd: %d", thread_data->aesd_data.fd);
+                }
+              
+                new_wr_buff = realloc(wr_buff, (rd_len + 1));
+                
+                if(new_wr_buff != NULL)
                 {
-                    if (written == -1) {
-                        pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
-                        syslog(LOG_ERR, "write() error: %d", errno);
-                        shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
-                        close(thread_data->aesd_data.recv_s_fd);
-                        close(thread_data->aesd_data.fd);
+					wr_buff = new_wr_buff;
+					strcat(wr_buff, rd_buff);
+					if(wr_buff[strlen(wr_buff) - 1u] == '\n')
+					{
+						if((cmd_str = strstr(wr_buff, "AESDCHAR_IOCSEEKTO:")) != NULL)
+						{
+							cmd_str += 19;
+							if((cmd_str = strtok((char *) cmd_str, ",")) != NULL)
+							{
+								seekto.write_cmd = (uint32_t)atoi(cmd_str);
+								if((cmd_str = strtok(NULL, ",")) != NULL)
+								{
+									seekto.write_cmd_offset = (uint32_t)atoi(cmd_str);									
+								}
+								else
+								{
+									pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
+									free(wr_buff);
+									shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+									close(thread_data->aesd_data.recv_s_fd);
+									close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+									unlink(OUTPUT_FILE);
+#endif
+									thread_data->thread_complete = true;
+									return thread_data;
+								}
+								
+								if(ioctl(thread_data->aesd_data.fd, AESDCHAR_IOCSEEKTO , &seekto) < 0)
+								{
+									pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
+									free(wr_buff);
+									syslog(LOG_ERR, "ioctl() error: %d", errno);
+									shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+									close(thread_data->aesd_data.recv_s_fd);
+									close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+									unlink(OUTPUT_FILE);
+#endif
+									thread_data->thread_complete = true;
+									return thread_data;
+								}
+								else
+								{
+									syslog(LOG_INFO, "ioctl() completed successfully, cmd: %u, cmd_offset: %u", seekto.write_cmd, seekto.write_cmd_offset);
+									free(wr_buff);
+									wr_buff = NULL;
+								}
+							}
+							else
+							{
+								pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
+								free(wr_buff);
+								shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+								close(thread_data->aesd_data.recv_s_fd);
+								close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+								unlink(OUTPUT_FILE);
+#endif
+								thread_data->thread_complete = true;
+								return thread_data;
+							}
+						}
+						else if((written = write(thread_data->aesd_data.fd, wr_buff, strlen(wr_buff))) != strlen(wr_buff))
+						{
+							if (written == -1) {
+								pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
+								free(wr_buff);
+								syslog(LOG_ERR, "write() error: %d", errno);
+								shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+								close(thread_data->aesd_data.recv_s_fd);
+								close(thread_data->aesd_data.fd);
+#ifndef USE_AESD_CHAR_DEVICE    
+								unlink(OUTPUT_FILE);
+#endif
+								thread_data->thread_complete = true;
+								return thread_data;
+							}
+						}
+						else
+						{
+							/* Continue */
+							syslog(LOG_INFO, "From: %d, wrote: %s to fd: %d", thread_data->aesd_data.recv_s_fd, wr_buff, thread_data->aesd_data.fd);
+							free(wr_buff);
+							wr_buff = NULL;
+#ifndef USE_AESD_CHAR_DEVICE
+							fsync(thread_data->aesd_data.fd);  // Ensure data is written to disk
+#endif
+							lseek(thread_data->aesd_data.fd, 0, SEEK_SET); // Go to the start of the file
+						}
+					}
+					else
+					{
+						
+						continue;
+					}
+				}
+				else
+				{
+					free(wr_buff);
+					shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+					close(thread_data->aesd_data.recv_s_fd);
+					close(thread_data->aesd_data.fd);
 #ifndef USE_AESD_CHAR_DEVICE    
                         unlink(OUTPUT_FILE);
 #endif
-                        thread_data->thread_complete = true;
-                        return thread_data;
-                    }
-                }
-                else
-                {
-                    /* Continue */
-                    syslog(LOG_INFO, "From: %d, wrote: %s", thread_data->aesd_data.recv_s_fd, rd_buff);
-                }
+					thread_data->thread_complete = true;
+					return thread_data;
+				}
 
-                if(rd_buff[strlen(rd_buff) - 1u] == '\n')
-                {
-#ifndef USE_AESD_CHAR_DEVICE
-                    fsync(thread_data->aesd_data.fd);  // Ensure data is written to disk
-#endif
-                    memset(rd_buff, 0, sizeof(rd_buff));
-                    
-                    syslog(LOG_INFO, "Output Stream...");
-#ifndef USE_AESD_CHAR_DEVICE
-                    lseek(thread_data->aesd_data.fd, 0, SEEK_SET); // Go to the start of the file
-#endif
-                    while ((total_read = read(thread_data->aesd_data.fd, rd_buff, sizeof(rd_buff))) > 0) 
-                    {
-                        sent_bytes = 0;
-                        while (sent_bytes < total_read) 
-                        {
-                            syslog(LOG_INFO, "%s", &rd_buff[sent_bytes]);
-                            written = send(thread_data->aesd_data.recv_s_fd, rd_buff + sent_bytes, total_read - sent_bytes, 0);
-                            if (written == -1) 
-                            {
-                                syslog(LOG_ERR, "send() error: %d", errno);
-                                pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
-                                shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
-                                close(thread_data->aesd_data.recv_s_fd);
-                                close(thread_data->aesd_data.fd);
+				memset(rd_buff, 0, sizeof(rd_buff));
+				
+				syslog(LOG_INFO, "Output Stream attempting on fd: %d", thread_data->aesd_data.fd);
+
+				while ((total_read = read(thread_data->aesd_data.fd, rd_buff, sizeof(rd_buff))) > 0) 
+				{
+					sent_bytes = 0;
+					while (sent_bytes < total_read) 
+					{
+						syslog(LOG_INFO, "%s", &rd_buff[sent_bytes]);
+						written = send(thread_data->aesd_data.recv_s_fd, rd_buff + sent_bytes, total_read - sent_bytes, 0);
+						if (written == -1) 
+						{
+							syslog(LOG_ERR, "send() error: %d", errno);
+							pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
+							free(wr_buff);
+							shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+							close(thread_data->aesd_data.recv_s_fd);
+							close(thread_data->aesd_data.fd);
 #ifndef USE_AESD_CHAR_DEVICE    
-                        unlink(OUTPUT_FILE);
+					unlink(OUTPUT_FILE);
 #endif
-                                thread_data->thread_complete = true;
-                                return thread_data;
-                            }
-                            sent_bytes += written;
-                        }
-                    }
-                    if (total_read == -1) {
-                        syslog(LOG_ERR, "read() error: %d", errno);
-                        pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
-                        shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
-                        close(thread_data->aesd_data.recv_s_fd);
-                        close(thread_data->aesd_data.fd);
+							thread_data->thread_complete = true;
+							return thread_data;
+						}
+						sent_bytes += written;
+					}
+				}
+				if (total_read == -1) {
+					syslog(LOG_ERR, "read() error: %d", errno);
+					pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
+					free(wr_buff);
+					shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
+					close(thread_data->aesd_data.recv_s_fd);
+					close(thread_data->aesd_data.fd);
 #ifndef USE_AESD_CHAR_DEVICE    
-                        unlink(OUTPUT_FILE);
+					unlink(OUTPUT_FILE);
 #endif
-                        thread_data->thread_complete = true;
-                        return thread_data;
-                    }
-                    
-                    memset(rd_buff, 0, sizeof(rd_buff));
-                }
-                else
-                {
-                    /* continue */
-                    memset(rd_buff, 0, sizeof(rd_buff));
-                } 
+					thread_data->thread_complete = true;
+					return thread_data;
+				}
+				
+				
+				memset(rd_buff, 0, sizeof(rd_buff));
 
                 close(thread_data->aesd_data.fd);
 #ifndef USE_AESD_CHAR_DEVICE    
@@ -441,11 +531,11 @@ static void * _aesdsocket_thread_fn(void* thread_param)
         }while(rd_len != 0);
         
         pthread_mutex_unlock(thread_data->aesd_data.t_mutex);
-
+		free(wr_buff);
         shutdown(thread_data->aesd_data.recv_s_fd, SHUT_RD);
         close(thread_data->aesd_data.recv_s_fd);
 
-        //syslog(LOG_INFO, "Closed connection from %s", ipstr);
+        syslog(LOG_INFO, "Closed connection from %s", ipstr);
    }
     
     thread_data->thread_complete = true;
